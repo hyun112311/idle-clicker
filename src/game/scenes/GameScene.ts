@@ -101,6 +101,39 @@ export class GameScene extends Phaser.Scene {
         this.mouseClickEmitter.explode();
     }
 
+    private handleUpgrade(type: string) {
+        switch (type) {
+            case 'click': this.upgradeManager.purchaseClickUpgrade(); break;
+            case 'auto': this.upgradeManager.purchaseAutoUpgrade(); break;
+            case 'crit': this.upgradeManager.purchaseCritUpgrade(); break;
+            case 'gold': this.upgradeManager.purchaseGoldUpgrade(); break;
+        }
+    }
+
+    private handleSkill() {
+        this.upgradeManager.activateSkill(this.time.now);
+    }
+
+    private handleArtifact(type: string) {
+        if (type === 'goldenCard' || type === 'espresso') {
+            this.upgradeManager.purchaseArtifact(type);
+        }
+    }
+
+    private handlePrestigeRequest() {
+        // Check if unlocked or has beans
+        if (this.upgradeManager.maxStage < GameConfig.PRESTIGE_UNLOCK_STAGE && this.upgradeManager.beans === 0) return;
+
+        const potentialBeans = this.upgradeManager.getPotentialBeans();
+
+        this.uiManager.showPrestigeConfirmation(potentialBeans, () => {
+            this.upgradeManager.prestige();
+            this.saveManager.save();
+            // Force respawn to reset visuals
+            this.building.spawn(1, false);
+        });
+    }
+
     private handleEnemyDeath(baseGold: number) {
         // 1. Give Gold (Apply Multipliers)
         const totalGold = baseGold * this.upgradeManager.getTotalGoldMultiplier();
@@ -206,11 +239,7 @@ export class GameScene extends Phaser.Scene {
 
     // Callbacks provided directly in create now, except skill which needs time
 
-    private onActivateSkill() {
-        if (this.upgradeManager.activateSkill(this.time.now)) {
-            // UI updated by event
-        }
-    }
+
 
     private onAutoAttack() {
         let damage = this.upgradeManager.autoDamage;

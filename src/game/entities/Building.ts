@@ -9,6 +9,10 @@ export class Building extends Phaser.GameObjects.Container {
     private maxHealth: number;
     private goldReward: number = 1;
 
+    private bodySprite!: Phaser.GameObjects.Rectangle;
+    private uiManager: UIManager;
+    private getClickDamage: () => number;
+
     private particleEmitter: Phaser.GameObjects.Particles.ParticleEmitter;
 
     constructor(scene: Phaser.Scene, x: number, y: number, uiManager: UIManager, getClickDamage: () => number) {
@@ -46,13 +50,6 @@ export class Building extends Phaser.GameObjects.Container {
 
         // Initial spawn animation
         this.spawn(1, false);
-    }
-
-    // ...
-
-    private spawnHitParticles() {
-        this.particleEmitter.setPosition(this.x, this.y);
-        this.particleEmitter.explode(10);
     }
 
     private onClick() {

@@ -93,7 +93,7 @@ export class UIManager {
         // --- HUD Bar (Bottom of Top Zone) ---
         // consolidated bar for Gold & Stocks
         const hudY = topZoneH - 30;
-        const hudBg = this.scene.add.rectangle(width / 2, hudY, width * 0.95, this.HUD_BAR_HEIGHT, 0x000000, 0.5)
+        this.scene.add.rectangle(width / 2, hudY, width * 0.95, this.HUD_BAR_HEIGHT, 0x000000, 0.5)
             .setStrokeStyle(2, 0xffd700);
 
         this.goldText = this.scene.add.text(width * 0.3, hudY, 'Gold: 0', {
@@ -282,11 +282,11 @@ export class UIManager {
 
     private updateArtifactAvailability(mgr: any) {
         const stocks = mgr.stocks;
-        this.updateButtonVisuals(this.artifactCardBtn, 'card', stocks, 5, false, true); // Cost 5
-        this.updateButtonVisuals(this.artifactEspressoBtn, 'espresso', stocks, 10, false, true); // Cost 10
+        this.updateButtonVisuals(this.artifactCardBtn, 'card', stocks, 5, false); // Cost 5
+        this.updateButtonVisuals(this.artifactEspressoBtn, 'espresso', stocks, 10, false); // Cost 10
     }
 
-    private updateButtonVisuals(btn: Phaser.GameObjects.Container, id: string, current: number, cost: number, isMaxed: boolean = false, isStock: boolean = false) {
+    private updateButtonVisuals(btn: Phaser.GameObjects.Container, id: string, current: number, cost: number, isMaxed: boolean = false) {
         const bg = btn.getData('bg') as Phaser.GameObjects.Rectangle;
         const glow = btn.getData('glow') as Phaser.GameObjects.Rectangle;
         const fill = this.buttonFills.get(id);
