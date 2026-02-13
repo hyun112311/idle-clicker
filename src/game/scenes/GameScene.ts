@@ -10,6 +10,7 @@ export class GameScene extends Phaser.Scene {
     private uiManager!: UIManager;
     private upgradeManager!: UpgradeManager;
     private saveManager!: SaveManager;
+    private mouseClickEmitter!: Phaser.GameObjects.Particles.ParticleEmitter;
 
     // Boss State
     private isBossFight: boolean = false;
@@ -31,24 +32,40 @@ export class GameScene extends Phaser.Scene {
         this.uiManager = new UIManager(this);
         this.saveManager = new SaveManager(this.upgradeManager);
 
+        // Setup UI Events (Must be before load to catch offline-gold event)
+        this.uiManager.setupListeners(this.upgradeManager);
+
         // Load Game Data
         this.saveManager.load();
 
-        // Setup UI Events
-        this.uiManager.setupListeners(this.upgradeManager);
+        // Mouse Click Particles Emitter
+        this.mouseClickEmitter = this.add.particles(0, 0, 'particle', {
+            speed: { min: 50, max: 150 },
+            scale: { start: 0.4, end: 0 },
+            blendMode: 'ADD',
+            lifespan: 200,
+            emitting: false,
+            quantity: 5
+        });
 
+        // Bind UI Events
         this.uiManager.bindUpgradeCallbacks(
-            () => this.upgradeManager.purchaseClickUpgrade(),
-            () => this.upgradeManager.purchaseAutoUpgrade(),
-            () => this.upgradeManager.purchaseCritUpgrade(),
-            () => this.upgradeManager.purchaseGoldUpgrade(),
-            () => this.onActivateSkill()
+            () => this.handleUpgrade('click'),
+            () => this.handleUpgrade('auto'),
+            () => this.handleUpgrade('crit'),
+            () => this.handleUpgrade('gold'),
+            () => this.handleSkill(),
+            () => this.handlePrestigeRequest()
         );
 
         this.uiManager.bindArtifactCallbacks(
-            () => this.upgradeManager.purchaseArtifact('goldenCard'),
-            () => this.upgradeManager.purchaseArtifact('espresso')
+            () => this.handleArtifact('goldenCard'),
+            () => this.handleArtifact('espresso')
         );
+
+        this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+            this.spawnClickParticles(pointer.x, pointer.y);
+        });
 
         const centerX = this.scale.width / 2;
         const centerY = this.scale.height * 0.25;
@@ -77,6 +94,11 @@ export class GameScene extends Phaser.Scene {
             callback: () => this.saveManager.save(),
             loop: true
         });
+    }
+
+    private spawnClickParticles(x: number, y: number) {
+        this.mouseClickEmitter.setPosition(x, y);
+        this.mouseClickEmitter.explode();
     }
 
     private handleEnemyDeath(baseGold: number) {
@@ -193,6 +215,9 @@ export class GameScene extends Phaser.Scene {
     private onAutoAttack() {
         let damage = this.upgradeManager.autoDamage;
         if (damage <= 0) return;
+
+        // Global Multiplier (Beans)
+        damage *= this.upgradeManager.getGlobalDamageMultiplier();
 
         // Skill Multiplier for Auto
         if (this.upgradeManager.isSkillActive(this.time.now)) {

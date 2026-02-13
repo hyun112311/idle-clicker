@@ -21,4 +21,12 @@ export const GameConfig = {
     // Save System
     SAVE_KEY: 'idle_clicker_save',
     AUTO_SAVE_INTERVAL: 30000, // 30s
+
+    // Prestige
+    PRESTIGE_UNLOCK_STAGE: 10, // Unlock at Stage 10 for testing
+    PRESTIGE_BEAN_BONUS: 0.02, // +2% per bean
+
+    // Balancing
+    INITIAL_BASE_HEALTH: 10,
+    HEALTH_GROWTH_RATE: 1.5,
 };

@@ -15,8 +15,10 @@ export interface GameSaveData {
     critRate: number;
     goldMultiplier: number;
     stage: number;
+    maxStage?: number;
     enemiesKilled: number;
     stocks: number;
+    beans?: number;
     artifactGoldenCard: number;
     artifactEspresso: number;
     clickUpgradeCost: number;
@@ -40,6 +42,10 @@ export class UpgradeManager extends Phaser.Events.EventEmitter {
     // Currency (Moved here from UIManager for centralization)
     public gold: number = 0;
     public stocks: number = 0;
+    public beans: number = 0; // Prestige Currency
+
+    // Stats Tracking
+    public maxStage: number = 1;
 
     // Artifacts
     public artifactGoldenCard: number = 0;   // +50% Gold each
@@ -67,8 +73,10 @@ export class UpgradeManager extends Phaser.Events.EventEmitter {
             critRate: this.critRate,
             goldMultiplier: this.goldMultiplier,
             stage: this.stage,
+            maxStage: this.maxStage,
             enemiesKilled: this.enemiesKilled,
             stocks: this.stocks,
+            beans: this.beans,
             artifactGoldenCard: this.artifactGoldenCard,
             artifactEspresso: this.artifactEspresso,
             clickUpgradeCost: this.clickUpgradeCost,
@@ -86,8 +94,10 @@ export class UpgradeManager extends Phaser.Events.EventEmitter {
         this.critRate = data.critRate;
         this.goldMultiplier = data.goldMultiplier;
         this.stage = data.stage;
+        this.maxStage = data.maxStage || data.stage; // Backwards compatibility
         this.enemiesKilled = data.enemiesKilled;
         this.stocks = data.stocks;
+        this.beans = data.beans || 0;
         this.artifactGoldenCard = data.artifactGoldenCard;
         this.artifactEspresso = data.artifactEspresso;
         this.clickUpgradeCost = data.clickUpgradeCost;
@@ -100,6 +110,51 @@ export class UpgradeManager extends Phaser.Events.EventEmitter {
 
     public emitDetails() {
         this.emit('state-changed', this);
+    }
+
+    // --- Prestige ---
+
+    public getPotentialBeans(): number {
+        if (this.maxStage < GameConfig.PRESTIGE_UNLOCK_STAGE) return 0;
+        // Formula: floor((maxStage / 10) ^ 2)
+        return Math.floor(Math.pow(this.maxStage / 10, 2));
+    }
+
+    public prestige() {
+        const beansToGain = this.getPotentialBeans();
+        if (beansToGain <= 0) return;
+
+        // Reset
+        this.gold = 0;
+        this.clickDamage = 1;
+        this.autoDamage = 0;
+        this.critRate = 0;
+        this.goldMultiplier = 1.0;
+        this.stage = 1;
+        this.enemiesKilled = 0;
+        this.stocks = 0; // Reset stocks too? Usually logic is soft reset. User said "Reset Gold and Upgrades (keep Artifacts)". Stocks are currency for artifacts? Usually stocks shouldn't display if artifacts kept? 
+        // User: "Reset Gold and Upgrades (keep Artifacts) in exchange for 'Prestige Beans'".
+        // Artifacts cost stocks. If we keep artifacts, we should probably keep stocks or reset them?
+        // Let's reset stocks to make it challenging again, since artifacts are permanent.
+
+        // Costs Reset
+        this.clickUpgradeCost = GameConfig.INITIAL_CLICK_COST;
+        this.autoUpgradeCost = GameConfig.INITIAL_AUTO_COST;
+        this.critUpgradeCost = GameConfig.INITIAL_CRIT_COST;
+        this.goldUpgradeCost = GameConfig.INITIAL_GOLD_COST;
+
+        // Gain Beans
+        this.beans += beansToGain;
+
+        // Emit
+        this.emit('gold-changed', this.gold);
+        this.emit('stocks-changed', this.stocks);
+        this.emit('state-changed', this);
+        this.emit('progression-changed', this.enemiesKilled, this.stage);
+    }
+
+    public getGlobalDamageMultiplier(): number {
+        return 1 + (this.beans * GameConfig.PRESTIGE_BEAN_BONUS);
     }
 
     // --- Currency Helpers ---
@@ -130,6 +185,9 @@ export class UpgradeManager extends Phaser.Events.EventEmitter {
 
     public advanceStage() {
         this.stage++;
+        if (this.stage > this.maxStage) {
+            this.maxStage = this.stage;
+        }
         this.enemiesKilled = 0;
         this.emit('progression-changed', this.enemiesKilled, this.stage);
     }
