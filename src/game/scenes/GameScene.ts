@@ -57,7 +57,7 @@ export class GameScene extends Phaser.Scene {
         this.building = new Building(this, centerX, centerY, this.uiManager, () => this.calculateClickDamage());
 
         // Restore Stage Visuals
-        this.building.updateStats(this.upgradeManager.stage, false);
+        this.building.updateStats(false);
 
         // Listen for enemy death
         this.building.on('enemy-died', (baseGold: number) => {
@@ -212,7 +212,7 @@ export class GameScene extends Phaser.Scene {
         // Gold/UI updated via death event
     }
 
-    update(time: number, delta: number) {
+    update(time: number) {
         // Skill Timer
         const cooldown = this.upgradeManager.getSkillCooldownRemaining(time);
         const isActive = this.upgradeManager.isSkillActive(time);

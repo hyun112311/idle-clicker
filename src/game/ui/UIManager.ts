@@ -49,7 +49,7 @@ export class UIManager {
         const height = this.scene.scale.height;
 
         // Layout Constants
-        const TOP_ZONE_HEIGHT = height * 0.4;
+        // const TOP_ZONE_HEIGHT = height * 0.4;
         // const UI_ZONE_HEIGHT = height * 0.6; // Not explicitly needed if we use offsets
 
         // --- Top Zone (Gameplay) ---
@@ -287,7 +287,7 @@ export class UIManager {
         }
     }
 
-    public addGold(amount: number) {
+    public addGold() {
         // Just visual pop needed? Text update handled by event.
         // Animate gold text
         this.scene.tweens.add({ targets: this.goldText, scale: 1.2, duration: 100, yoyo: true });

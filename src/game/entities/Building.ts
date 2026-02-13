@@ -7,7 +7,6 @@ export class Building extends Phaser.GameObjects.Container {
     private currentHealth: number;
     private maxHealth: number;
     private goldReward: number = 1;
-    private level: number = 1;
 
     private bodySprite: Phaser.GameObjects.Rectangle;
     private uiManager: UIManager;
@@ -117,7 +116,7 @@ export class Building extends Phaser.GameObjects.Container {
         });
     }
 
-    public updateStats(stage: number, isBoss: boolean) {
+    public updateStats(isBoss: boolean) {
         // Just update visuals based on state, don't change HP mid-fight unless needed
         if (isBoss) {
             this.bodySprite.setFillStyle(0x880000);
@@ -143,7 +142,7 @@ export class Building extends Phaser.GameObjects.Container {
         this.bodySprite.setInteractive();
 
         // Visuals
-        this.updateStats(stage, isBoss);
+        this.updateStats(isBoss);
 
         // Fall from top animation
         this.y = -200;

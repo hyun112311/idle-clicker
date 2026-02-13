@@ -1,4 +1,5 @@
-import { UpgradeManager, GameSaveData } from './UpgradeManager';
+import { UpgradeManager } from './UpgradeManager';
+import type { GameSaveData } from './UpgradeManager';
 import { GameConfig } from '../config/GameConfig';
 
 export class SaveManager {
@@ -48,14 +49,13 @@ export class SaveManager {
         const diffSeconds = Math.floor(diffMS / 1000);
 
         if (diffSeconds > 60) { // Only count if away for more than 1 minute
-            const offlineDamage = this.upgradeManager.autoDamage * diffSeconds;
             // Apply gold multiplier to offline damage? Usually auto-damage yields gold per kill, but let's approximate.
             // If AutoDamage is DPS, then we get Gold per second roughly equal to DPS * GoldMultiplier (assuming 1 HP = 1 Gold ratio roughly, or strict reward).
-            // Actually, gold comes from kills. 
+            // Actually, gold comes from kills.
             // Approximation: Offline Gold = (AutoDamage / AverageEnemyHP) * GoldPerkill * Seconds.
             // Simpler: Offline Gold = AutoDamage * Seconds * GoldMultiplier * 0.5 (Conservative estimate).
 
-            // Let's keep it simple: Raw Gold = AutoDamage * Seconds. 
+            // Let's keep it simple: Raw Gold = AutoDamage * Seconds.
             // If AutoDamage is 0, no offline progress.
             if (this.upgradeManager.autoDamage > 0) {
                 const earnedGold = this.upgradeManager.autoDamage * diffSeconds * this.upgradeManager.getTotalGoldMultiplier();
