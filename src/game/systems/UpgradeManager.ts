@@ -1,5 +1,32 @@
+import Phaser from 'phaser';
+import { GameConfig } from '../config/GameConfig';
 
-export class UpgradeManager {
+export interface GameSaveData {
+    gold: number; // Stored in UIManager usually, but UpgradeManager should probably track it or we save from both? 
+    // actually UIManager handles gold currently. We should potentially move gold to UpgradeManager or SaveManager.
+    // For now, let's pass gold to save/load or keep it in UpgradeManager.
+    // The Plan said "Store Gold... in localStorage". 
+    // If UIManager has `currentGold`, we need to save it. 
+    // Refactoring: Let's move Gold state to UpgradeManager to centralize game state?
+    // Or just accept it in toObject.
+    // Let's Move Gold to UpgradeManager to make it the "State Manager".
+    clickDamage: number;
+    autoDamage: number;
+    critRate: number;
+    goldMultiplier: number;
+    stage: number;
+    enemiesKilled: number;
+    stocks: number;
+    artifactGoldenCard: number;
+    artifactEspresso: number;
+    clickUpgradeCost: number;
+    autoUpgradeCost: number;
+    critUpgradeCost: number;
+    goldUpgradeCost: number;
+    lastSaveTime: number;
+}
+
+export class UpgradeManager extends Phaser.Events.EventEmitter {
     // Stats
     public clickDamage: number = 1;
     public autoDamage: number = 0;
@@ -9,9 +36,9 @@ export class UpgradeManager {
     // Progression
     public stage: number = 1;
     public enemiesKilled: number = 0;
-    public readonly ENEMIES_PER_STAGE: number = 10;
 
-    // Currency
+    // Currency (Moved here from UIManager for centralization)
+    public gold: number = 0;
     public stocks: number = 0;
 
     // Artifacts
@@ -19,56 +46,116 @@ export class UpgradeManager {
     public artifactEspresso: number = 0;     // -20% Cooldown each
 
     // Costs
-    public clickUpgradeCost: number = 10;
-    public autoUpgradeCost: number = 50;
-    public critUpgradeCost: number = 100;
-    public goldUpgradeCost: number = 200;
-
-    private readonly COST_MULTIPLIER: number = 1.5;
+    public clickUpgradeCost: number = GameConfig.INITIAL_CLICK_COST;
+    public autoUpgradeCost: number = GameConfig.INITIAL_AUTO_COST;
+    public critUpgradeCost: number = GameConfig.INITIAL_CRIT_COST;
+    public goldUpgradeCost: number = GameConfig.INITIAL_GOLD_COST;
 
     // Skill: Coffee Rush
-    public readonly BASE_SKILL_DURATION: number = 10000;
-    public readonly BASE_SKILL_COOLDOWN: number = 30000;
-    private lastSkillUsedTime: number = -30000;
+    private lastSkillUsedTime: number = -GameConfig.SKILL_COOLDOWN; // Ready at start
 
-    constructor() { }
+    constructor() {
+        super();
+    }
 
-    public canAfford(gold: number, cost: number): boolean {
-        return gold >= cost;
+    // --- Serialization ---
+    public toObject(): GameSaveData {
+        return {
+            gold: this.gold,
+            clickDamage: this.clickDamage,
+            autoDamage: this.autoDamage,
+            critRate: this.critRate,
+            goldMultiplier: this.goldMultiplier,
+            stage: this.stage,
+            enemiesKilled: this.enemiesKilled,
+            stocks: this.stocks,
+            artifactGoldenCard: this.artifactGoldenCard,
+            artifactEspresso: this.artifactEspresso,
+            clickUpgradeCost: this.clickUpgradeCost,
+            autoUpgradeCost: this.autoUpgradeCost,
+            critUpgradeCost: this.critUpgradeCost,
+            goldUpgradeCost: this.goldUpgradeCost,
+            lastSaveTime: Date.now()
+        };
+    }
+
+    public fromObject(data: GameSaveData) {
+        this.gold = data.gold;
+        this.clickDamage = data.clickDamage;
+        this.autoDamage = data.autoDamage;
+        this.critRate = data.critRate;
+        this.goldMultiplier = data.goldMultiplier;
+        this.stage = data.stage;
+        this.enemiesKilled = data.enemiesKilled;
+        this.stocks = data.stocks;
+        this.artifactGoldenCard = data.artifactGoldenCard;
+        this.artifactEspresso = data.artifactEspresso;
+        this.clickUpgradeCost = data.clickUpgradeCost;
+        this.autoUpgradeCost = data.autoUpgradeCost;
+        this.critUpgradeCost = data.critUpgradeCost;
+        this.goldUpgradeCost = data.goldUpgradeCost;
+
+        this.emitDetails();
+    }
+
+    public emitDetails() {
+        this.emit('state-changed', this);
+    }
+
+    // --- Currency Helpers ---
+    public addGold(amount: number) {
+        this.gold += amount;
+        this.emit('gold-changed', this.gold);
+    }
+
+    public spendGold(amount: number) {
+        this.gold -= amount;
+        this.emit('gold-changed', this.gold);
+    }
+
+    public canAfford(cost: number): boolean {
+        return this.gold >= cost;
     }
 
     // --- Progression ---
 
     public addKill() {
         this.enemiesKilled++;
+        this.emit('progression-changed', this.enemiesKilled, this.stage);
     }
 
     public isBossReady(): boolean {
-        return this.enemiesKilled >= this.ENEMIES_PER_STAGE;
+        return this.enemiesKilled >= GameConfig.ENEMIES_PER_STAGE;
     }
 
     public advanceStage() {
         this.stage++;
         this.enemiesKilled = 0;
+        this.emit('progression-changed', this.enemiesKilled, this.stage);
     }
 
     public failBoss() {
         this.enemiesKilled = 0; // Reset progress on failure
+        this.emit('progression-changed', this.enemiesKilled, this.stage);
     }
 
     // --- Currency & Artifacts ---
 
     public addStocks(amount: number) {
         this.stocks += amount;
+        this.emit('stocks-changed', this.stocks);
     }
 
     public purchaseArtifact(type: 'goldenCard' | 'espresso'): boolean {
-        const cost = type === 'goldenCard' ? 5 : 10;
+        const cost = type === 'goldenCard' ? GameConfig.ARTIFACT_CARD_COST : GameConfig.ARTIFACT_ESPRESSO_COST;
 
         if (this.stocks >= cost) {
             this.stocks -= cost;
             if (type === 'goldenCard') this.artifactGoldenCard++;
             if (type === 'espresso') this.artifactEspresso++;
+
+            this.emit('stocks-changed', this.stocks);
+            this.emit('artifacts-changed', this);
             return true;
         }
         return false;
@@ -80,59 +167,55 @@ export class UpgradeManager {
     }
 
     public getSkillCooldown(): number {
-        // Base - (20% * Artifact Count * Base)
-        // Cap at some reasonable minimum? Requirement says "-20%". 
-        // 5 Espresso Machines = 0 cooldown? Let's assume multiplicative reduction or simple subtraction.
-        // "Reduces ... by 20%" usually implies 0.8 multiplier.
-        // Let's go with 0.8^count for diminishing returns, OR flat 20% of BASE?
-        // Requirement: "Reduces active skill cooldown by 20%". Let's assume multiplicative for safety (0.8x), or simple subtraction.
-        // Simple subtraction of 20% base (6000ms) would mean 5 items = 0 cooldown.
-        // Let's use Multiplicative: Current = Base * (0.8 ^ count).
-        return this.BASE_SKILL_COOLDOWN * Math.pow(0.8, this.artifactEspresso);
+        // Base * (0.8 ^ count)
+        return GameConfig.SKILL_COOLDOWN * Math.pow(0.8, this.artifactEspresso);
     }
 
     // --- Upgrades ---
 
-    public purchaseClickUpgrade(currentGold: number): { success: boolean, cost: number, newDamage: number } {
-        if (!this.canAfford(currentGold, this.clickUpgradeCost)) {
-            return { success: false, cost: 0, newDamage: this.clickDamage };
-        }
-        const cost = this.clickUpgradeCost;
+    public purchaseClickUpgrade(): boolean {
+        if (!this.canAfford(this.clickUpgradeCost)) return false;
+
+        this.spendGold(this.clickUpgradeCost);
         this.clickDamage++;
-        this.clickUpgradeCost = Math.ceil(this.clickUpgradeCost * this.COST_MULTIPLIER);
-        return { success: true, cost, newDamage: this.clickDamage };
+        this.clickUpgradeCost = Math.ceil(this.clickUpgradeCost * GameConfig.COST_MULTIPLIER);
+
+        this.emit('stats-changed', this);
+        return true;
     }
 
-    public purchaseAutoUpgrade(currentGold: number): { success: boolean, cost: number, newDamage: number } {
-        if (!this.canAfford(currentGold, this.autoUpgradeCost)) {
-            return { success: false, cost: 0, newDamage: this.autoDamage };
-        }
-        const cost = this.autoUpgradeCost;
+    public purchaseAutoUpgrade(): boolean {
+        if (!this.canAfford(this.autoUpgradeCost)) return false;
+
+        this.spendGold(this.autoUpgradeCost);
         this.autoDamage++;
-        this.autoUpgradeCost = Math.ceil(this.autoUpgradeCost * this.COST_MULTIPLIER);
-        return { success: true, cost, newDamage: this.autoDamage };
+        this.autoUpgradeCost = Math.ceil(this.autoUpgradeCost * GameConfig.COST_MULTIPLIER);
+
+        this.emit('stats-changed', this);
+        return true;
     }
 
-    public purchaseCritUpgrade(currentGold: number): { success: boolean, cost: number, newRate: number } {
-        if (this.critRate >= 0.5) return { success: false, cost: 0, newRate: this.critRate };
+    public purchaseCritUpgrade(): boolean {
+        if (this.critRate >= 0.5) return false;
+        if (!this.canAfford(this.critUpgradeCost)) return false;
 
-        if (!this.canAfford(currentGold, this.critUpgradeCost)) {
-            return { success: false, cost: 0, newRate: this.critRate };
-        }
-        const cost = this.critUpgradeCost;
+        this.spendGold(this.critUpgradeCost);
         this.critRate = Math.min(0.5, this.critRate + 0.05);
-        this.critUpgradeCost = Math.ceil(this.critUpgradeCost * this.COST_MULTIPLIER);
-        return { success: true, cost, newRate: this.critRate };
+        this.critUpgradeCost = Math.ceil(this.critUpgradeCost * GameConfig.COST_MULTIPLIER);
+
+        this.emit('stats-changed', this);
+        return true;
     }
 
-    public purchaseGoldUpgrade(currentGold: number): { success: boolean, cost: number, newMult: number } {
-        if (!this.canAfford(currentGold, this.goldUpgradeCost)) {
-            return { success: false, cost: 0, newMult: this.goldMultiplier };
-        }
-        const cost = this.goldUpgradeCost;
+    public purchaseGoldUpgrade(): boolean {
+        if (!this.canAfford(this.goldUpgradeCost)) return false;
+
+        this.spendGold(this.goldUpgradeCost);
         this.goldMultiplier += 0.1;
-        this.goldUpgradeCost = Math.ceil(this.goldUpgradeCost * this.COST_MULTIPLIER);
-        return { success: true, cost, newMult: this.goldMultiplier };
+        this.goldUpgradeCost = Math.ceil(this.goldUpgradeCost * GameConfig.COST_MULTIPLIER);
+
+        this.emit('stats-changed', this);
+        return true;
     }
 
     // --- Skills ---
@@ -140,13 +223,14 @@ export class UpgradeManager {
     public activateSkill(currentTime: number): boolean {
         if (this.isSkillReady(currentTime)) {
             this.lastSkillUsedTime = currentTime;
+            this.emit('skill-activated', this.lastSkillUsedTime);
             return true;
         }
         return false;
     }
 
     public isSkillActive(currentTime: number): boolean {
-        return (currentTime - this.lastSkillUsedTime) < this.BASE_SKILL_DURATION;
+        return (currentTime - this.lastSkillUsedTime) < GameConfig.SKILL_DURATION;
     }
 
     public isSkillReady(currentTime: number): boolean {

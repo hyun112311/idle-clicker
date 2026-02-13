@@ -1,18 +1,19 @@
-
 import Phaser from 'phaser';
 import { Building } from '../entities/Building';
 import { UIManager } from '../ui/UIManager';
 import { UpgradeManager } from '../systems/UpgradeManager';
+import { SaveManager } from '../systems/SaveManager';
+import { GameConfig } from '../config/GameConfig';
 
 export class GameScene extends Phaser.Scene {
     private building!: Building;
     private uiManager!: UIManager;
     private upgradeManager!: UpgradeManager;
+    private saveManager!: SaveManager;
 
     // Boss State
     private isBossFight: boolean = false;
     private bossTimerEvent: Phaser.Time.TimerEvent | null = null;
-    private readonly BOSS_TIME_LIMIT: number = 30000;
 
     constructor() {
         super('GameScene');
@@ -28,28 +29,35 @@ export class GameScene extends Phaser.Scene {
     create() {
         this.upgradeManager = new UpgradeManager();
         this.uiManager = new UIManager(this);
+        this.saveManager = new SaveManager(this.upgradeManager);
+
+        // Load Game Data
+        this.saveManager.load();
+
+        // Setup UI Events
+        this.uiManager.setupListeners(this.upgradeManager);
 
         this.uiManager.bindUpgradeCallbacks(
-            () => this.onBuyClickUpgrade(),
-            () => this.onBuyAutoUpgrade(),
-            () => this.onBuyCritUpgrade(),
-            () => this.onBuyGoldUpgrade(),
+            () => this.upgradeManager.purchaseClickUpgrade(),
+            () => this.upgradeManager.purchaseAutoUpgrade(),
+            () => this.upgradeManager.purchaseCritUpgrade(),
+            () => this.upgradeManager.purchaseGoldUpgrade(),
             () => this.onActivateSkill()
         );
 
         this.uiManager.bindArtifactCallbacks(
-            () => this.onBuyArtifactCard(),
-            () => this.onBuyArtifactEspresso()
+            () => this.upgradeManager.purchaseArtifact('goldenCard'),
+            () => this.upgradeManager.purchaseArtifact('espresso')
         );
 
         const centerX = this.scale.width / 2;
-        const centerY = this.scale.height * 0.25; // Top 25% (Matches Building target)
+        const centerY = this.scale.height * 0.25;
 
         // Pass a callback to get damage so we can use current stats
         this.building = new Building(this, centerX, centerY, this.uiManager, () => this.calculateClickDamage());
 
-        // Update UI only AFTER building is created
-        this.updateUI();
+        // Restore Stage Visuals
+        this.building.updateStats(this.upgradeManager.stage, false);
 
         // Listen for enemy death
         this.building.on('enemy-died', (baseGold: number) => {
@@ -62,22 +70,29 @@ export class GameScene extends Phaser.Scene {
             callbackScope: this,
             loop: true
         });
+
+        // Auto Save
+        this.time.addEvent({
+            delay: GameConfig.AUTO_SAVE_INTERVAL,
+            callback: () => this.saveManager.save(),
+            loop: true
+        });
     }
 
     private handleEnemyDeath(baseGold: number) {
         // 1. Give Gold (Apply Multipliers)
         const totalGold = baseGold * this.upgradeManager.getTotalGoldMultiplier();
-        this.uiManager.addGold(totalGold);
+        this.upgradeManager.addGold(totalGold); // Emits event
 
         // 2. Progression Logic
         if (this.isBossFight) {
             // Boss Defeated!
-            this.upgradeManager.advanceStage();
+            this.upgradeManager.advanceStage(); // Emits event
             this.isBossFight = false;
 
-            // Drop Stocks (1-3)
+            // Drop Stocks
             const stocks = Phaser.Math.Between(1, 3);
-            this.upgradeManager.addStocks(stocks);
+            this.upgradeManager.addStocks(stocks); // Emits event
 
             // Cleanup Timer
             if (this.bossTimerEvent) {
@@ -89,13 +104,10 @@ export class GameScene extends Phaser.Scene {
             this.cameras.main.shake(500, 0.02);
         } else {
             // Normal Enemy Defeated
-            this.upgradeManager.addKill();
+            this.upgradeManager.addKill(); // Emits event
         }
 
-        this.updateUI();
-
         // 3. Determine Next State & Spawn
-        // Check if next one should be a boss
         if (!this.isBossFight && this.upgradeManager.isBossReady()) {
             this.isBossFight = true;
             this.startBossFight();
@@ -108,17 +120,13 @@ export class GameScene extends Phaser.Scene {
     }
 
     private spawnNextEnemy() {
-        // Ensure timer is clear if we are spawning a normal enemy (e.g. after boss loss reset)
-        // But startBossFight sets the timer. 
-        // If we are here, we are about to spawn.
         this.building.spawn(this.upgradeManager.stage, this.isBossFight);
-        this.updateUI();
     }
 
     private startBossFight() {
         // Set Timer
         this.bossTimerEvent = this.time.addEvent({
-            delay: this.BOSS_TIME_LIMIT,
+            delay: GameConfig.BOSS_TIME_LIMIT,
             callback: this.failBossFight,
             callbackScope: this
         });
@@ -129,17 +137,12 @@ export class GameScene extends Phaser.Scene {
 
         // Reset Logic
         this.isBossFight = false;
-        this.upgradeManager.failBoss(); // Reset kills
+        this.upgradeManager.failBoss(); // Emits event
 
-        // Reset Building (Visuals handled by spawn, but we need to force respawn/heal if it wasn't dead?)
-        // Actually, if timer runs out, the building is still alive but we need to "replace" it with normal enemy.
-        // Or simply heal it and change stats?
-        // Easiest is to force respawn logic in Building via a method, but Building spawns on death.
-        // Let's call a method on Building to reset it.
+        // Reset Building
         this.building.resetToNormal(this.upgradeManager.stage);
 
-        this.cameras.main.shake(200, 0.01); // Small shake on fail
-        this.updateUI();
+        this.cameras.main.shake(200, 0.01);
     }
 
     private calculateClickDamage(): number {
@@ -179,88 +182,12 @@ export class GameScene extends Phaser.Scene {
         });
     }
 
-    private onBuyClickUpgrade() {
-        const result = this.upgradeManager.purchaseClickUpgrade(this.uiManager.getGold());
-        if (result.success) {
-            this.uiManager.spendGold(result.cost);
-            this.updateUI();
-        }
-    }
-
-    private onBuyAutoUpgrade() {
-        const result = this.upgradeManager.purchaseAutoUpgrade(this.uiManager.getGold());
-        if (result.success) {
-            this.uiManager.spendGold(result.cost);
-            this.updateUI();
-        }
-    }
-
-    private onBuyCritUpgrade() {
-        const result = this.upgradeManager.purchaseCritUpgrade(this.uiManager.getGold());
-        if (result.success) {
-            this.uiManager.spendGold(result.cost);
-            this.updateUI();
-        }
-    }
-
-    private onBuyGoldUpgrade() {
-        const result = this.upgradeManager.purchaseGoldUpgrade(this.uiManager.getGold());
-        if (result.success) {
-            this.uiManager.spendGold(result.cost);
-            this.updateUI();
-        }
-    }
+    // Callbacks provided directly in create now, except skill which needs time
 
     private onActivateSkill() {
         if (this.upgradeManager.activateSkill(this.time.now)) {
-            this.updateUI();
+            // UI updated by event
         }
-    }
-
-    private onBuyArtifactCard() {
-        if (this.upgradeManager.purchaseArtifact('goldenCard')) {
-            this.updateUI();
-        }
-    }
-
-    private onBuyArtifactEspresso() {
-        if (this.upgradeManager.purchaseArtifact('espresso')) {
-            this.updateUI();
-        }
-    }
-
-    private updateUI() {
-        this.uiManager.updateButtons(
-            this.uiManager.getGold(),
-            this.upgradeManager.clickUpgradeCost,
-            this.upgradeManager.autoUpgradeCost,
-            this.upgradeManager.critUpgradeCost,
-            this.upgradeManager.goldUpgradeCost,
-            this.upgradeManager.critRate,
-            this.upgradeManager.goldMultiplier
-        );
-
-        this.uiManager.updateArtifacts(
-            this.upgradeManager.stocks,
-            this.upgradeManager.artifactGoldenCard,
-            this.upgradeManager.artifactEspresso
-        );
-
-        const currentBossTimer = (this.isBossFight && this.bossTimerEvent)
-            ? this.bossTimerEvent.getRemaining()
-            : undefined;
-
-        this.uiManager.updateStageInfo(
-            this.upgradeManager.stage,
-            this.upgradeManager.enemiesKilled,
-            this.upgradeManager.ENEMIES_PER_STAGE,
-            currentBossTimer
-        );
-
-        // Pass info to building for HP bar scaling?
-        // Building needs to know Max HP based on Stage and Boss status.
-        // We probably need to update Building stats whenever Stage changes or Boss starts.
-        this.building.updateStats(this.upgradeManager.stage, this.isBossFight);
     }
 
     private onAutoAttack() {
@@ -272,8 +199,7 @@ export class GameScene extends Phaser.Scene {
             damage *= 2;
         }
 
-        // Crit Logic for Auto? (Requirement didn't specify, but "Doubles all damage" implies yes)
-        // Let's allow crits on auto for fun/consistency
+        // Crit Logic for Auto
         const isCrit = Math.random() < this.upgradeManager.critRate;
         if (isCrit) {
             damage *= 2;
@@ -283,18 +209,24 @@ export class GameScene extends Phaser.Scene {
         if (this.building) {
             this.building.damage(damage);
         }
-
-        // UI update for gold is handled by death event now (or if we add incremental gold logic)
-        this.updateUI();
+        // Gold/UI updated via death event
     }
 
     update(time: number, delta: number) {
-        // Continuous updates
-        this.updateUI();
-
         // Skill Timer
         const cooldown = this.upgradeManager.getSkillCooldownRemaining(time);
         const isActive = this.upgradeManager.isSkillActive(time);
         this.uiManager.updateSkillButton(cooldown, isActive);
+
+        // Boss Timer (Continuous Update)
+        if (this.isBossFight && this.bossTimerEvent) {
+            const remaining = this.bossTimerEvent.getRemaining();
+            this.uiManager.updateStageInfo(
+                this.upgradeManager.stage,
+                this.upgradeManager.enemiesKilled,
+                GameConfig.ENEMIES_PER_STAGE,
+                remaining
+            );
+        }
     }
 }

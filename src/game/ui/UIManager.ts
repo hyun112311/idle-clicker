@@ -39,9 +39,6 @@ export class UIManager {
     private skillOverlay!: Phaser.GameObjects.Rectangle;
     private skillTimerText!: Phaser.GameObjects.Text;
 
-    private currentGold: number = 0;
-    privatecurrentStocks: number = 0;
-
     constructor(scene: Phaser.Scene) {
         this.scene = scene;
         this.createUI();
@@ -141,7 +138,88 @@ export class UIManager {
         return container;
     }
 
-    // --- Bindings ---
+    // --- Bindings & Events ---
+
+    public setupListeners(upgradeManager: any) { // Use 'any' or specific Type if available but circular dep might be issue.
+        // Actually specific type is fine if we import it as type only or careful with imports.
+        // Let's assume passed object has the events.
+
+        // Gold
+        upgradeManager.on('gold-changed', (gold: number) => {
+            this.goldText.setText(`Gold: ${Math.floor(gold)}`);
+            this.updateButtonAvailability(upgradeManager);
+        });
+
+        // Stocks
+        upgradeManager.on('stocks-changed', (stocks: number) => {
+            this.stocksText.setText(`Stocks: ${stocks}`);
+            this.updateArtifactAvailability(upgradeManager);
+        });
+
+        // Stats (Costs/Values)
+        upgradeManager.on('stats-changed', (mgr: any) => {
+            this.updateStatsDisplay(mgr);
+            this.updateButtonAvailability(mgr);
+        });
+
+        // Progression
+        upgradeManager.on('progression-changed', (kills: number, stage: number) => {
+            this.updateStageInfo(stage, kills, 10); // 10 is hardcoded or pass const
+        });
+
+        // Artifacts
+        upgradeManager.on('artifacts-changed', (mgr: any) => {
+            this.updateArtifactDisplay(mgr);
+        });
+
+        // Offline Gold
+        upgradeManager.on('offline-gold', (amount: number, seconds: number) => {
+            this.showOfflinePopup(amount, seconds);
+        });
+
+        // Initial Update
+        this.updateStatsDisplay(upgradeManager);
+        this.updateArtifactDisplay(upgradeManager);
+        this.updateButtonAvailability(upgradeManager);
+        this.goldText.setText(`Gold: ${Math.floor(upgradeManager.gold)}`);
+        this.stocksText.setText(`Stocks: ${upgradeManager.stocks}`);
+        this.updateStageInfo(upgradeManager.stage, upgradeManager.enemiesKilled, 10);
+    }
+
+    private updateStatsDisplay(mgr: any) {
+        this.clickUpgradeText.setText(`Click (+1)\n$${mgr.clickUpgradeCost}`);
+        this.autoUpgradeText.setText(`Auto (+1)\n$${mgr.autoUpgradeCost}`);
+
+        const critPercent = Math.round(mgr.critRate * 100);
+        this.critUpgradeText.setText(mgr.critRate >= 0.5 ? `Crit (Max)\n-` : `Crit (+5%)\n$${mgr.critUpgradeCost}\n(${critPercent}%)`);
+
+        const goldPercent = Math.round((mgr.goldMultiplier - 1) * 100);
+        this.goldUpgradeText.setText(`Gold (+10%)\n$${mgr.goldUpgradeCost}\n(+${goldPercent}%)`);
+    }
+
+    private updateArtifactDisplay(mgr: any) {
+        // Cards
+        const cardCost = 5;
+        this.artifactCardText.setText(`Gold Card\nPrice: ${cardCost} Stocks\n(Owned: ${mgr.artifactGoldenCard})`);
+
+        // Espresso
+        const espressoCost = 10;
+        this.artifactEspressoText.setText(`Espresso\nPrice: ${espressoCost} Stocks\n(Owned: ${mgr.artifactEspresso})`);
+    }
+
+    private updateButtonAvailability(mgr: any) {
+        const gold = mgr.gold;
+        this.clickUpgradeBtn.setAlpha(gold >= mgr.clickUpgradeCost ? 1 : 0.5);
+        this.autoUpgradeBtn.setAlpha(gold >= mgr.autoUpgradeCost ? 1 : 0.5);
+        this.critUpgradeBtn.setAlpha(mgr.critRate < 0.5 && gold >= mgr.critUpgradeCost ? 1 : 0.5);
+        this.goldUpgradeBtn.setAlpha(gold >= mgr.goldUpgradeCost ? 1 : 0.5);
+    }
+
+    private updateArtifactAvailability(mgr: any) {
+        const stocks = mgr.stocks;
+        this.artifactCardBtn.setAlpha(stocks >= 5 ? 1 : 0.5);
+        this.artifactEspressoBtn.setAlpha(stocks >= 10 ? 1 : 0.5);
+    }
 
     public bindUpgradeCallbacks(
         onClick: () => void,
@@ -174,46 +252,6 @@ export class UIManager {
         });
     }
 
-    public updateButtons(
-        gold: number,
-        clickCost: number,
-        autoCost: number,
-        critCost: number,
-        goldCost: number,
-        critRate: number,
-        goldMult: number
-    ) {
-        // Update Texts
-        this.clickUpgradeText.setText(`Click (+1)\n$${clickCost}`);
-        this.autoUpgradeText.setText(`Auto (+1)\n$${autoCost}`);
-
-        const critPercent = Math.round(critRate * 100);
-        this.critUpgradeText.setText(critRate >= 0.5 ? `Crit (Max)\n-` : `Crit (+5%)\n$${critCost}\n(${critPercent}%)`);
-
-        const goldPercent = Math.round((goldMult - 1) * 100);
-        this.goldUpgradeText.setText(`Gold (+10%)\n$${goldCost}\n(+${goldPercent}%)`);
-
-        // Visual State
-        this.clickUpgradeBtn.setAlpha(gold >= clickCost ? 1 : 0.5);
-        this.autoUpgradeBtn.setAlpha(gold >= autoCost ? 1 : 0.5);
-        this.critUpgradeBtn.setAlpha(critRate < 0.5 && gold >= critCost ? 1 : 0.5);
-        this.goldUpgradeBtn.setAlpha(gold >= goldCost ? 1 : 0.5);
-    }
-
-    public updateArtifacts(stocks: number, cardCount: number, espressoCount: number) {
-        this.stocksText.setText(`Stocks: ${stocks}`);
-
-        // Cards
-        const cardCost = 5;
-        this.artifactCardText.setText(`Gold Card\nPrice: ${cardCost} Stocks\n(Owned: ${cardCount})`);
-        this.artifactCardBtn.setAlpha(stocks >= cardCost ? 1 : 0.5);
-
-        // Espresso
-        const espressoCost = 10;
-        this.artifactEspressoText.setText(`Espresso\nPrice: ${espressoCost} Stocks\n(Owned: ${espressoCount})`);
-        this.artifactEspressoBtn.setAlpha(stocks >= espressoCost ? 1 : 0.5);
-    }
-
     public updateSkillButton(cooldownRemaining: number, isActive: boolean) {
         if (isActive) {
             this.buffText.setVisible(true);
@@ -241,6 +279,7 @@ export class UIManager {
             this.levelText.setText(`BOSS FIGHT! Stage ${stage}`);
             this.levelText.setColor('#ff0000');
             this.bossTimerText.setVisible(true).setText(`${(bossTime / 1000).toFixed(1)}s`);
+            this.bossTimerText.setDepth(100);
         } else {
             this.levelText.setText(`Stage ${stage} - ${kills}/${required}`);
             this.levelText.setColor('#ffffff');
@@ -249,18 +288,70 @@ export class UIManager {
     }
 
     public addGold(amount: number) {
-        this.currentGold += amount;
-        this.goldText.setText(`Gold: ${Math.floor(this.currentGold)}`);
+        // Just visual pop needed? Text update handled by event.
         // Animate gold text
         this.scene.tweens.add({ targets: this.goldText, scale: 1.2, duration: 100, yoyo: true });
     }
 
-    public spendGold(amount: number) {
-        this.currentGold -= amount;
-        this.goldText.setText(`Gold: ${Math.floor(this.currentGold)}`);
+    // --- Offline Popup ---
+
+    private offlinePopupContainer!: Phaser.GameObjects.Container;
+    private offlinePopupText!: Phaser.GameObjects.Text;
+
+    public showOfflinePopup(amount: number, seconds: number) {
+        if (!this.offlinePopupContainer) {
+            this.createOfflinePopup();
+        }
+
+        this.offlinePopupText.setText(`Welcome Back!\n\nYou were gone for ${seconds} seconds.\n\nOffline Earnings:\n$${Math.floor(amount)}`);
+        this.offlinePopupContainer.setVisible(true);
+        this.offlinePopupContainer.setAlpha(0);
+
+        this.scene.tweens.add({
+            targets: this.offlinePopupContainer,
+            alpha: 1,
+            duration: 500,
+            ease: 'Power2'
+        });
     }
 
-    public getGold(): number {
-        return this.currentGold;
+    private createOfflinePopup() {
+        const width = this.scene.scale.width;
+        const height = this.scene.scale.height;
+
+        this.offlinePopupContainer = this.scene.add.container(width / 2, height / 2).setDepth(1000);
+
+        // Backdrop
+        const bg = this.scene.add.rectangle(0, 0, width * 0.8, height * 0.4, 0x000000, 0.9)
+            .setStrokeStyle(4, 0xffd700);
+
+        // Title
+        const title = this.scene.add.text(0, -height * 0.15, 'OFFLINE PROGRESS', {
+            fontFamily: 'Arial', fontSize: '28px', color: '#ffd700', fontStyle: 'bold'
+        }).setOrigin(0.5);
+
+        // Info Text
+        this.offlinePopupText = this.scene.add.text(0, -20, '', {
+            fontFamily: 'Arial', fontSize: '20px', color: '#ffffff', align: 'center'
+        }).setOrigin(0.5);
+
+        // Collect Button
+        const btnY = height * 0.12;
+        const btn = this.scene.add.container(0, btnY);
+        const btnBg = this.scene.add.rectangle(0, 0, 160, 50, 0x00aa00).setInteractive({ useHandCursor: true });
+        const btnTxt = this.scene.add.text(0, 0, 'COLLECT', { fontSize: '24px', fontStyle: 'bold' }).setOrigin(0.5);
+
+        btnBg.on('pointerdown', () => {
+            this.scene.tweens.add({
+                targets: this.offlinePopupContainer,
+                alpha: 0,
+                duration: 300,
+                onComplete: () => this.offlinePopupContainer.setVisible(false)
+            });
+        });
+
+        btn.add([btnBg, btnTxt]);
+        this.offlinePopupContainer.add([bg, title, this.offlinePopupText, btn]);
+        this.offlinePopupContainer.setVisible(false);
     }
 }
