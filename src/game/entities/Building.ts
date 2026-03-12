@@ -9,23 +9,27 @@ export class Building extends Phaser.GameObjects.Container {
     private maxHealth: number;
     private goldReward: number = 1;
 
-    private bodySprite!: Phaser.GameObjects.Rectangle;
+    private bodySprite!: Phaser.GameObjects.Sprite;
     private uiManager: UIManager;
     private getClickDamage: () => number;
 
     private particleEmitter: Phaser.GameObjects.Particles.ParticleEmitter;
 
+    private landingY: number;
+
     constructor(scene: Phaser.Scene, x: number, y: number, uiManager: UIManager, getClickDamage: () => number) {
         super(scene, x, y);
         this.uiManager = uiManager;
         this.getClickDamage = getClickDamage;
+        this.landingY = y; // Store initial Y as landing target
 
         // Initialize stats
         this.maxHealth = this.baseHealth;
         this.currentHealth = this.maxHealth;
 
         // Create visual representation (Larger 180x180)
-        this.bodySprite = scene.add.rectangle(0, 0, 180, 180, 0xff0000);
+        this.bodySprite = scene.add.sprite(0, 0, 'building');
+        this.bodySprite.setDisplaySize(180, 180);
         this.add(this.bodySprite);
 
         // Physics
@@ -52,6 +56,17 @@ export class Building extends Phaser.GameObjects.Container {
         this.spawn(1, false);
     }
 
+    public updateLayoutPosition(y: number, scale: number) {
+        this.landingY = y;
+        this.scene.tweens.add({
+            targets: this,
+            y: y,
+            scale: scale, // Zoom effect
+            duration: 400,
+            ease: 'Power2'
+        });
+    }
+
     private onClick() {
         this.damage(this.getClickDamage());
     }
@@ -71,12 +86,13 @@ export class Building extends Phaser.GameObjects.Container {
         // Visual feedback: Shake
         this.scene.tweens.add({
             targets: this,
-            x: this.x + Phaser.Math.Between(-shakeIntensity, shakeIntensity),
-            y: this.y + Phaser.Math.Between(-shakeIntensity, shakeIntensity),
+            x: this.scene.scale.width / 2 + Phaser.Math.Between(-shakeIntensity, shakeIntensity), // Keep X centered
+            y: this.landingY + Phaser.Math.Between(-shakeIntensity, shakeIntensity), // Shake around landingY
             duration: 50,
             yoyo: true,
             onComplete: () => {
                 this.x = this.scene.scale.width / 2; // Reset X
+                this.y = this.landingY; // Reset Y
             }
         });
 
@@ -100,13 +116,13 @@ export class Building extends Phaser.GameObjects.Container {
     private updateVisualState(ratio: number) {
         if (ratio < 0.3) {
             // Critical
-            this.bodySprite.setFillStyle(0xff4444);
+            this.bodySprite.setTint(0xff4444);
         } else if (ratio < 0.7) {
             // Damaged
-            this.bodySprite.setFillStyle(0xffaa00);
+            this.bodySprite.setTint(0xffaa00);
         } else {
             // Normal
-            this.bodySprite.setFillStyle(0xff0000);
+            this.bodySprite.clearTint();
         }
     }
 
@@ -138,10 +154,10 @@ export class Building extends Phaser.GameObjects.Container {
 
     public updateStats(isBoss: boolean) {
         if (isBoss) {
-            this.bodySprite.setFillStyle(0x880000);
+            this.bodySprite.setTint(0xff0000);
             this.bodySprite.setScale(1.5);
         } else {
-            this.bodySprite.setFillStyle(0xff0000);
+            this.bodySprite.clearTint();
             this.bodySprite.setScale(1);
         }
     }
@@ -168,7 +184,7 @@ export class Building extends Phaser.GameObjects.Container {
         this.y = -200;
         this.scene.tweens.add({
             targets: this,
-            y: this.scene.scale.height * 0.20, // 20% Height
+            y: this.landingY, // Use stored landing position
             duration: 600,
             ease: 'Bounce.Out'
         });

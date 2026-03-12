@@ -3,6 +3,7 @@ import { Building } from '../entities/Building';
 import { UIManager } from '../ui/UIManager';
 import { UpgradeManager } from '../systems/UpgradeManager';
 import { SaveManager } from '../systems/SaveManager';
+import { SoundManager } from '../systems/SoundManager';
 import { GameConfig } from '../config/GameConfig';
 
 export class GameScene extends Phaser.Scene {
@@ -10,24 +11,36 @@ export class GameScene extends Phaser.Scene {
     private uiManager!: UIManager;
     private upgradeManager!: UpgradeManager;
     private saveManager!: SaveManager;
+    private soundManager!: SoundManager;
     private mouseClickEmitter!: Phaser.GameObjects.Particles.ParticleEmitter;
 
-    // Boss State
     private isBossFight: boolean = false;
     private bossTimerEvent: Phaser.Time.TimerEvent | null = null;
+    private autoAttackAccumulator: number = 0;
 
     constructor() {
         super('GameScene');
     }
 
     preload() {
-        const graphics = this.make.graphics({ x: 0, y: 0 }, false);
-        graphics.fillStyle(0xffffff);
-        graphics.fillRect(0, 0, 8, 8);
-        graphics.generateTexture('particle', 8, 8);
+        this.load.image('building', 'assets/building.png');
+        this.load.image('bg', 'assets/background.png');
+        this.load.image('particle', 'assets/particle.png');
+
+        // Audio
+        this.load.audio('click', 'assets/audio/click.wav');
+        this.load.audio('crit', 'assets/audio/crit.wav');
+        this.load.audio('buy', 'assets/audio/buy.wav');
+        this.load.audio('boss_spawn', 'assets/audio/boss_spawn.wav');
+        this.load.audio('boss_defeat', 'assets/audio/boss_defeat.wav');
     }
 
     create() {
+        // Add background
+        const bg = this.add.image(0, 0, 'bg').setOrigin(0, 0);
+        bg.setDisplaySize(this.scale.width, this.scale.height);
+
+        this.soundManager = new SoundManager(this);
         this.upgradeManager = new UpgradeManager();
         this.uiManager = new UIManager(this);
         this.saveManager = new SaveManager(this.upgradeManager);
@@ -51,16 +64,28 @@ export class GameScene extends Phaser.Scene {
         // Bind UI Events
         this.uiManager.bindUpgradeCallbacks(
             () => this.handleUpgrade('click'),
-            () => this.handleUpgrade('auto'),
             () => this.handleUpgrade('crit'),
             () => this.handleUpgrade('gold'),
             () => this.handleSkill(),
             () => this.handlePrestigeRequest()
         );
 
+        this.uiManager.bindCoworkerCallback((id: string) => {
+            if (this.upgradeManager.hireCoworker(id)) {
+                this.soundManager.play('buy');
+                this.saveManager.save();
+            }
+        });
+
         this.uiManager.bindArtifactCallbacks(
             () => this.handleArtifact('goldenCard'),
             () => this.handleArtifact('espresso')
+        );
+
+        this.uiManager.bindBeanUpgradeCallbacks(
+            () => this.handleBeanUpgrade('startingGold'),
+            () => this.handleBeanUpgrade('damage'),
+            () => this.handleBeanUpgrade('autoSpeed')
         );
 
         this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
@@ -68,7 +93,7 @@ export class GameScene extends Phaser.Scene {
         });
 
         const centerX = this.scale.width / 2;
-        const centerY = this.scale.height * 0.25;
+        const centerY = this.scale.height * 0.375; // Initial center of 75% zone
 
         // Pass a callback to get damage so we can use current stats
         this.building = new Building(this, centerX, centerY, this.uiManager, () => this.calculateClickDamage());
@@ -76,16 +101,21 @@ export class GameScene extends Phaser.Scene {
         // Restore Stage Visuals
         this.building.updateStats(false);
 
+        // Listen for Layout Changes
+        this.events.on('ui-toggled', (data: { y: number, scale: number } | number) => {
+            if (this.building) {
+                // Backward compatibility just in case
+                if (typeof data === 'number') {
+                    this.building.updateLayoutPosition(data, 1);
+                } else {
+                    this.building.updateLayoutPosition(data.y, data.scale);
+                }
+            }
+        });
+
         // Listen for enemy death
         this.building.on('enemy-died', (baseGold: number) => {
             this.handleEnemyDeath(baseGold);
-        });
-
-        this.time.addEvent({
-            delay: 1000,
-            callback: this.onAutoAttack,
-            callbackScope: this,
-            loop: true
         });
 
         // Auto Save
@@ -97,17 +127,19 @@ export class GameScene extends Phaser.Scene {
     }
 
     private spawnClickParticles(x: number, y: number) {
+        this.soundManager.play('click');
         this.mouseClickEmitter.setPosition(x, y);
         this.mouseClickEmitter.explode();
     }
 
     private handleUpgrade(type: string) {
+        let success = false;
         switch (type) {
-            case 'click': this.upgradeManager.purchaseClickUpgrade(); break;
-            case 'auto': this.upgradeManager.purchaseAutoUpgrade(); break;
-            case 'crit': this.upgradeManager.purchaseCritUpgrade(); break;
-            case 'gold': this.upgradeManager.purchaseGoldUpgrade(); break;
+            case 'click': success = this.upgradeManager.purchaseClickUpgrade(); break;
+            case 'crit': success = this.upgradeManager.purchaseCritUpgrade(); break;
+            case 'gold': success = this.upgradeManager.purchaseGoldUpgrade(); break;
         }
+        if (success) this.soundManager.play('buy');
     }
 
     private handleSkill() {
@@ -116,7 +148,9 @@ export class GameScene extends Phaser.Scene {
 
     private handleArtifact(type: string) {
         if (type === 'goldenCard' || type === 'espresso') {
-            this.upgradeManager.purchaseArtifact(type);
+            if (this.upgradeManager.purchaseArtifact(type)) {
+                this.soundManager.play('buy');
+            }
         }
     }
 
@@ -134,6 +168,13 @@ export class GameScene extends Phaser.Scene {
         });
     }
 
+    private handleBeanUpgrade(type: 'startingGold' | 'damage' | 'autoSpeed') {
+        if (this.upgradeManager.purchaseBeanUpgrade(type)) {
+            this.soundManager.play('buy');
+            this.saveManager.save();
+        }
+    }
+
     private handleEnemyDeath(baseGold: number) {
         // 1. Give Gold (Apply Multipliers)
         const totalGold = baseGold * this.upgradeManager.getTotalGoldMultiplier();
@@ -142,6 +183,7 @@ export class GameScene extends Phaser.Scene {
         // 2. Progression Logic
         if (this.isBossFight) {
             // Boss Defeated!
+            this.soundManager.play('boss_defeat');
             this.upgradeManager.advanceStage(); // Emits event
             this.isBossFight = false;
 
@@ -179,6 +221,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     private startBossFight() {
+        this.soundManager.play('boss_spawn');
         // Set Timer
         this.bossTimerEvent = this.time.addEvent({
             delay: GameConfig.BOSS_TIME_LIMIT,
@@ -220,6 +263,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     private showCritText(amount: number) {
+        this.soundManager.play('crit');
         const x = this.scale.width / 2 + Phaser.Math.Between(-50, 50);
         const y = this.scale.height / 2 - 50;
 
@@ -239,10 +283,10 @@ export class GameScene extends Phaser.Scene {
 
     // Callbacks provided directly in create now, except skill which needs time
 
+    private onAutoAttack(baseDamage: number) {
+        let damage = baseDamage;
+        console.log("Calculated DPS:", damage);
 
-
-    private onAutoAttack() {
-        let damage = this.upgradeManager.autoDamage;
         if (damage <= 0) return;
 
         // Global Multiplier (Beans)
@@ -266,7 +310,21 @@ export class GameScene extends Phaser.Scene {
         // Gold/UI updated via death event
     }
 
-    update(time: number) {
+    update(time: number, delta: number) {
+        // Auto DPS
+        const totalDPS = this.upgradeManager.getTotalCoworkerDPS();
+        if (totalDPS > 0) {
+            this.autoAttackAccumulator += delta;
+            // The delay can decrease below 1000 via Bean upgrades
+            const delay = this.upgradeManager.getAutoAttackDelay();
+            if (this.autoAttackAccumulator >= delay) {
+                this.onAutoAttack(totalDPS);
+                this.autoAttackAccumulator -= delay; // Keeps remainder for precision
+            }
+        } else {
+            this.autoAttackAccumulator = 0;
+        }
+
         // Skill Timer
         const cooldown = this.upgradeManager.getSkillCooldownRemaining(time);
         const isActive = this.upgradeManager.isSkillActive(time);
