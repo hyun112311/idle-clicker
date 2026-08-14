@@ -1,7 +1,7 @@
 
 import Phaser from 'phaser';
 
-export const GameConfig: Phaser.Types.Core.GameConfig = {
+export const PhaserGameConfig: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
   width: 360,
   height: 640,

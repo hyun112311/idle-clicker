@@ -285,7 +285,6 @@ export class GameScene extends Phaser.Scene {
 
     private onAutoAttack(baseDamage: number) {
         let damage = baseDamage;
-        console.log("Calculated DPS:", damage);
 
         if (damage <= 0) return;
 

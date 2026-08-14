@@ -896,7 +896,7 @@ export class UIManager {
             resetBg.on('pointerdown', () => {
                 const confirm = window.confirm("정말 초기화 하시겠습니까?");
                 if (confirm) {
-                    localStorage.clear();
+                    localStorage.removeItem(GameConfig.SAVE_KEY);
                     window.location.reload();
                 }
             });

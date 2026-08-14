@@ -34,7 +34,9 @@ export const GameConfig = {
 
     // Save System
     SAVE_KEY: 'idle_clicker_save',
+    SAVE_VERSION: 1,
     AUTO_SAVE_INTERVAL: 30000, // 30s
+    MAX_OFFLINE_REWARD_SECONDS: 60 * 60 * 8, // 8 hours
 
     // Prestige & Bean Shop
     PRESTIGE_UNLOCK_STAGE: 10, // Unlock at Stage 10 for testing
