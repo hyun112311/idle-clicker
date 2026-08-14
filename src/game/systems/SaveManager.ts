@@ -10,17 +10,13 @@ export class SaveManager {
         this.upgradeManager = upgradeManager;
         this.saveKey = GameConfig.SAVE_KEY;
 
-        // Auto-save on window close
-        window.onbeforeunload = () => {
-            this.save();
-        };
+        window.addEventListener('pagehide', () => this.save());
     }
 
     public save() {
         const data = this.upgradeManager.toObject();
         try {
             localStorage.setItem(this.saveKey, JSON.stringify(data));
-            console.log('Game Saved');
         } catch (e) {
             console.error('Failed to save game', e);
         }
@@ -31,7 +27,11 @@ export class SaveManager {
             const json = localStorage.getItem(this.saveKey);
             if (!json) return false;
 
-            const data = JSON.parse(json) as GameSaveData;
+            const data = this.migrate(JSON.parse(json));
+            if (!data) {
+                console.error('Failed to load game: invalid save data');
+                return false;
+            }
             this.upgradeManager.fromObject(data);
 
             // Check offline progress
@@ -45,8 +45,12 @@ export class SaveManager {
 
     private checkOfflineProgress(lastTime: number) {
         const now = Date.now();
-        const diffMS = now - lastTime;
-        const diffSeconds = Math.floor(diffMS / 1000);
+        const safeLastTime = Number.isFinite(lastTime) && lastTime > 0 ? lastTime : now;
+        const diffMS = Math.max(0, now - safeLastTime);
+        const diffSeconds = Math.min(
+            Math.floor(diffMS / 1000),
+            GameConfig.MAX_OFFLINE_REWARD_SECONDS
+        );
 
         if (diffSeconds > 60) { // Only count if away for more than 1 minute
             // Apply gold multiplier to offline damage? Usually auto-damage yields gold per kill, but let's approximate.
@@ -66,5 +70,19 @@ export class SaveManager {
                 this.upgradeManager.emit('offline-gold', earnedGold, diffSeconds);
             }
         }
+    }
+
+    private migrate(data: unknown): GameSaveData | null {
+        if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
+
+        const raw = data as Partial<GameSaveData>;
+        const version = typeof raw.version === 'number' ? raw.version : 0;
+        if (version > GameConfig.SAVE_VERSION) return null;
+
+        return {
+            ...raw,
+            version: GameConfig.SAVE_VERSION,
+            lastSaveTime: typeof raw.lastSaveTime === 'number' ? raw.lastSaveTime : Date.now()
+        } as GameSaveData;
     }
 }

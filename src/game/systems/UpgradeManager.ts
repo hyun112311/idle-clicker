@@ -2,14 +2,8 @@ import Phaser from 'phaser';
 import { GameConfig } from '../config/GameConfig';
 
 export interface GameSaveData {
-    gold: number; // Stored in UIManager usually, but UpgradeManager should probably track it or we save from both? 
-    // actually UIManager handles gold currently. We should potentially move gold to UpgradeManager or SaveManager.
-    // For now, let's pass gold to save/load or keep it in UpgradeManager.
-    // The Plan said "Store Gold... in localStorage". 
-    // If UIManager has `currentGold`, we need to save it. 
-    // Refactoring: Let's move Gold state to UpgradeManager to centralize game state?
-    // Or just accept it in toObject.
-    // Let's Move Gold to UpgradeManager to make it the "State Manager".
+    version: number;
+    gold: number;
     clickDamage: number;
     autoDamage: number;
     critRate: number;
@@ -86,6 +80,7 @@ export class UpgradeManager extends Phaser.Events.EventEmitter {
     // --- Serialization ---
     public toObject(): GameSaveData {
         return {
+            version: GameConfig.SAVE_VERSION,
             gold: this.gold,
             clickDamage: this.clickDamage,
             autoDamage: this.autoDamage,
@@ -110,36 +105,46 @@ export class UpgradeManager extends Phaser.Events.EventEmitter {
         };
     }
 
-    public fromObject(data: GameSaveData) {
-        this.gold = data.gold;
-        this.clickDamage = data.clickDamage;
-        this.autoDamage = data.autoDamage;
-        this.critRate = data.critRate;
-        this.goldMultiplier = data.goldMultiplier;
-        this.stage = data.stage;
-        this.maxStage = data.maxStage || data.stage; // Backwards compatibility
-        this.enemiesKilled = data.enemiesKilled;
-        this.stocks = data.stocks;
-        this.beans = data.beans || 0;
-        this.beanStartingGoldLevel = data.beanStartingGoldLevel || 0;
-        this.beanDamageLevel = data.beanDamageLevel || 0;
-        this.beanAutoSpeedLevel = data.beanAutoSpeedLevel || 0;
+    public fromObject(data: Partial<GameSaveData>) {
+        this.gold = this.readNumber(data.gold, 0);
+        this.clickDamage = this.readNumber(data.clickDamage, 1, 1);
+        this.autoDamage = this.readNumber(data.autoDamage, 0);
+        this.critRate = Phaser.Math.Clamp(this.readNumber(data.critRate, 0), 0, 0.5);
+        this.goldMultiplier = this.readNumber(data.goldMultiplier, 1, 1);
+        this.stage = this.readInteger(data.stage, 1, 1);
+        this.maxStage = Math.max(this.stage, this.readInteger(data.maxStage, this.stage, 1));
+        this.enemiesKilled = this.readInteger(data.enemiesKilled, 0);
+        this.stocks = this.readInteger(data.stocks, 0);
+        this.beans = this.readInteger(data.beans, 0);
+        this.beanStartingGoldLevel = this.readInteger(data.beanStartingGoldLevel, 0);
+        this.beanDamageLevel = this.readInteger(data.beanDamageLevel, 0);
+        this.beanAutoSpeedLevel = this.readInteger(data.beanAutoSpeedLevel, 0);
 
-        this.coworkerLevels = data.coworkerLevels || {};
+        this.coworkerLevels = data.coworkerLevels && typeof data.coworkerLevels === 'object'
+            ? { ...data.coworkerLevels }
+            : {};
         GameConfig.COWORKER_DATA.forEach(c => {
-            if (this.coworkerLevels[c.id] === undefined) {
-                this.coworkerLevels[c.id] = 0;
-            }
+            this.coworkerLevels[c.id] = this.readInteger(this.coworkerLevels[c.id], 0);
         });
 
-        this.artifactGoldenCard = data.artifactGoldenCard;
-        this.artifactEspresso = data.artifactEspresso;
-        this.clickUpgradeCost = data.clickUpgradeCost;
-        this.autoUpgradeCost = data.autoUpgradeCost;
-        this.critUpgradeCost = data.critUpgradeCost;
-        this.goldUpgradeCost = data.goldUpgradeCost;
+        this.artifactGoldenCard = this.readInteger(data.artifactGoldenCard, 0);
+        this.artifactEspresso = this.readInteger(data.artifactEspresso, 0);
+        this.clickUpgradeCost = this.readNumber(data.clickUpgradeCost, GameConfig.INITIAL_CLICK_COST, 1);
+        this.autoUpgradeCost = this.readNumber(data.autoUpgradeCost, GameConfig.INITIAL_AUTO_COST, 1);
+        this.critUpgradeCost = this.readNumber(data.critUpgradeCost, GameConfig.INITIAL_CRIT_COST, 1);
+        this.goldUpgradeCost = this.readNumber(data.goldUpgradeCost, GameConfig.INITIAL_GOLD_COST, 1);
 
         this.emitDetails();
+    }
+
+    private readNumber(value: unknown, fallback: number, minimum: number = 0): number {
+        return typeof value === 'number' && Number.isFinite(value) && value >= minimum
+            ? value
+            : fallback;
+    }
+
+    private readInteger(value: unknown, fallback: number, minimum: number = 0): number {
+        return Math.floor(this.readNumber(value, fallback, minimum));
     }
 
     public emitDetails() {
